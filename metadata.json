@@ -1,0 +1,6 @@
+{
+  "name": "La Fournée de l'École — Précommande Pains au Chocolat",
+  "description": "Plateforme de précommande de pains au chocolat à 1 € avant le 16 décembre pour financer les projets et sorties scolaires de l'école, avec récapitulatif et export CSV/PDF.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

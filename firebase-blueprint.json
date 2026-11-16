@@ -1,0 +1,145 @@
+{
+  "entities": {
+    "Order": {
+      "title": "Précommande de pains au chocolat",
+      "description": "Précommande passée par un parent pour un enfant dans le cadre de la vente de pains au chocolat avant le 16 décembre.",
+      "type": "object",
+      "properties": {
+        "childFirstName": {
+          "type": "string",
+          "description": "Prénom de l'enfant",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "childLastName": {
+          "type": "string",
+          "description": "Nom de famille de l'enfant",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "parentEmail": {
+          "type": "string",
+          "format": "email",
+          "description": "Adresse e-mail du parent qui commande",
+          "minLength": 5,
+          "maxLength": 150,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+        },
+        "quantity": {
+          "type": "integer",
+          "description": "Nombre de pains au chocolat commandés (entre 1 et 50)"
+        },
+        "unitPrice": {
+          "type": "number",
+          "description": "Prix unitaire fixé à 1 euro"
+        },
+        "totalAmount": {
+          "type": "number",
+          "description": "Montant total dû en euros (quantity * 1)"
+        },
+        "paymentStatus": {
+          "type": "string",
+          "description": "Statut du paiement de la précommande",
+          "enum": ["pending", "paid"]
+        },
+        "distributed": {
+          "type": "boolean",
+          "description": "Indique si la commande a été remise à l'enfant ou au parent"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Horodatage serveur de création"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Horodatage serveur de dernière mise à jour"
+        }
+      },
+      "required": [
+        "childFirstName",
+        "childLastName",
+        "parentEmail",
+        "quantity",
+        "unitPrice",
+        "totalAmount",
+        "paymentStatus",
+        "distributed",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CampaignSummary": {
+      "title": "Résumé agrégé de la campagne",
+      "description": "Compteur public sans donnée personnelle indiquant le total de pains au chocolat précommandés.",
+      "type": "object",
+      "properties": {
+        "totalPastries": {
+          "type": "integer",
+          "description": "Nombre total de pains au chocolat précommandés"
+        },
+        "totalOrders": {
+          "type": "integer",
+          "description": "Nombre total de précommandes enregistrées"
+        },
+        "lastOrderId": {
+          "type": "string",
+          "description": "Identifiant de la dernière commande ayant mis à jour le compteur",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Date de dernière mise à jour du compteur"
+        }
+      },
+      "required": [
+        "totalPastries",
+        "totalOrders",
+        "lastOrderId",
+        "updatedAt"
+      ]
+    },
+    "Admin": {
+      "title": "Organisateur autorisé",
+      "description": "Compte organisateur habilité à consulter le récapitulatif complet des commandes.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 5,
+          "maxLength": 150
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["email", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/orders/{orderId}": {
+      "schema": {
+        "$ref": "#/entities/Order"
+      },
+      "description": "Précommandes individuelles des parents (données PII restreintes en lecture aux organisateurs)."
+    },
+    "/campaign/{summaryId}": {
+      "schema": {
+        "$ref": "#/entities/CampaignSummary"
+      },
+      "description": "Document public 'summary' contenant uniquement le total agrégé sans PII."
+    },
+    "/admins/{uid}": {
+      "schema": {
+        "$ref": "#/entities/Admin"
+      },
+      "description": "Liste des administrateurs supplémentaires autorisés."
+    }
+  }
+}

@@ -1,0 +1,186 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && (
+          request.auth.token.email == 'chemille.stpierre@ec49.fr'
+          || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        );
+    }
+
+    function isValidEmail(email) {
+      return email is string
+        && email.size() >= 5
+        && email.size() <= 150
+        && email.matches('^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$');
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll([
+          'childFirstName',
+          'childLastName',
+          'parentEmail',
+          'quantity',
+          'unitPrice',
+          'totalAmount',
+          'paymentStatus',
+          'distributed',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'childFirstName',
+          'childLastName',
+          'parentEmail',
+          'quantity',
+          'unitPrice',
+          'totalAmount',
+          'paymentStatus',
+          'distributed',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.childFirstName is string
+        && data.childFirstName.size() >= 1
+        && data.childFirstName.size() <= 80
+        && data.childLastName is string
+        && data.childLastName.size() >= 1
+        && data.childLastName.size() <= 80
+        && isValidEmail(data.parentEmail)
+        && data.quantity is int
+        && data.quantity >= 1
+        && data.quantity <= 50
+        && data.unitPrice == 1
+        && data.totalAmount == data.quantity
+        && data.paymentStatus in ['pending', 'paid']
+        && data.distributed is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSummary(data) {
+      return data.keys().hasAll(['totalPastries', 'totalOrders', 'lastOrderId', 'updatedAt'])
+        && data.keys().hasOnly(['totalPastries', 'totalOrders', 'lastOrderId', 'updatedAt'])
+        && data.totalPastries is int
+        && data.totalPastries >= 0
+        && data.totalOrders is int
+        && data.totalOrders >= 0
+        && isValidId(data.lastOrderId)
+        && data.updatedAt is timestamp;
+    }
+
+    function isBeforeDeadline() {
+      return request.time < timestamp.date(2026, 12, 16);
+    }
+
+    // Orders collection: PII isolated to verified admins on read/list/update/delete.
+    // Public parents may create a pre-order before Dec 16, 2026 atomically with /campaign/summary.
+    match /orders/{orderId} {
+      allow get: if isAdmin() && isValidId(orderId);
+      allow list: if isAdmin();
+
+      allow create: if isValidId(orderId)
+        && isValidOrder(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            isBeforeDeadline()
+            && incoming().paymentStatus == 'pending'
+            && incoming().distributed == false
+            && getAfter(/databases/$(database)/documents/campaign/summary).data.lastOrderId == orderId
+          )
+        );
+
+      allow update: if isAdmin()
+        && isValidId(orderId)
+        && isValidOrder(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['paymentStatus', 'updatedAt'])
+          || incoming().diff(existing()).affectedKeys().hasOnly(['distributed', 'updatedAt'])
+          || incoming().diff(existing()).affectedKeys().hasOnly(['paymentStatus', 'distributed', 'updatedAt'])
+          || incoming().diff(existing()).affectedKeys().hasOnly([
+            'childFirstName',
+            'childLastName',
+            'parentEmail',
+            'quantity',
+            'totalAmount',
+            'paymentStatus',
+            'distributed',
+            'updatedAt'
+          ])
+        );
+
+      allow delete: if isAdmin() && isValidId(orderId);
+    }
+
+    // Public non-PII aggregate summary document ('summary')
+    match /campaign/{summaryId} {
+      allow get: if summaryId == 'summary';
+      allow list: if false;
+
+      allow create: if summaryId == 'summary'
+        && isValidSummary(incoming())
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            isBeforeDeadline()
+            && !exists(/databases/$(database)/documents/orders/$(incoming().lastOrderId))
+            && existsAfter(/databases/$(database)/documents/orders/$(incoming().lastOrderId))
+            && incoming().totalOrders == 1
+            && incoming().totalPastries == getAfter(/databases/$(database)/documents/orders/$(incoming().lastOrderId)).data.quantity
+          )
+        );
+
+      allow update: if summaryId == 'summary'
+        && isValidSummary(incoming())
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            isBeforeDeadline()
+            && !exists(/databases/$(database)/documents/orders/$(incoming().lastOrderId))
+            && existsAfter(/databases/$(database)/documents/orders/$(incoming().lastOrderId))
+            && incoming().totalOrders == existing().totalOrders + 1
+            && incoming().totalPastries == existing().totalPastries + getAfter(/databases/$(database)/documents/orders/$(incoming().lastOrderId)).data.quantity
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    // Admin registry (read own doc only, managed out-of-band)
+    match /admins/{uid} {
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
+    }
+  }
+}
